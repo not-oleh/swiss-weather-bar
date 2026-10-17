@@ -2,7 +2,7 @@
 
 [![Latest release](https://img.shields.io/github/v/release/not-oleh/swiss-weather-bar)](https://github.com/not-oleh/swiss-weather-bar/releases/latest)
 ![macOS 13+](https://img.shields.io/badge/macOS-13%2B-blue)
-[![MIT licence](https://img.shields.io/github/license/not-oleh/swiss-weather-bar)](LICENSE)
+[![MIT licence](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
 
 A small macOS menu bar app that shows the local weather forecast for any Swiss postcode.
 
