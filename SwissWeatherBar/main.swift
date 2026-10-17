@@ -113,6 +113,21 @@ func spokenCompass(_ deg: Int) -> String {
 
 // MARK: - Menu helpers
 
+/// Rounded for display, without the "-0" that formatting gives for values just below zero.
+func shown(_ x: Double, _ digits: Int = 0) -> Double {
+    let p = pow(10, Double(digits))
+    let r = (x * p).rounded() / p
+    return r == 0 ? 0 : r
+}
+
+/// A date formatter in Swiss time (see `swissTime`).
+func swissFormatter(_ setup: (DateFormatter) -> Void) -> DateFormatter {
+    let f = DateFormatter()
+    f.timeZone = swissTime
+    setup(f)
+    return f
+}
+
 /// A non-interactive row. It is drawn by a custom view because AppKit greys out the
 /// text of disabled menu items; tab-separated columns line up on the given tab stops.
 /// VoiceOver reads the row as one sentence: `speech`, or the text without the tabs.
@@ -233,8 +248,12 @@ func saveCache(_ c: CachedForecast) {
     try? JSONEncoder().encode(c).write(to: cacheURL, options: .atomic)
 }
 
+/// After this long without a successful download a forecast is no longer shown:
+/// its "current" temperature would be misleading.
+let forecastMaxAge: TimeInterval = 12 * 3600
+
 /// The cached forecast for `plz`, unless it is too old to pass for current conditions.
-func loadCache(for plz: Int, maxAge: TimeInterval = 12 * 3600) -> CachedForecast? {
+func loadCache(for plz: Int, maxAge: TimeInterval = forecastMaxAge) -> CachedForecast? {
     guard let d = try? Data(contentsOf: cacheURL), let c = try? JSONDecoder().decode(CachedForecast.self, from: d),
           c.plz == plz, Date().timeIntervalSince(c.fetchedAt) < maxAge else { return nil }
     return c
@@ -247,7 +266,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSSear
                          @preconcurrency CLLocationManagerDelegate {   // callbacks arrive on the main thread
     let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     let menu = NSMenu()
-    let places = loadPlaces()
+    let places: [Place]
     let client = OGDClient()
     let warn = WarningsClient()
     var warnTimer: Timer?
@@ -284,6 +303,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSSear
     override init() {
         let saved = UserDefaults.standard.integer(forKey: "plz")
         let all = loadPlaces()
+        places = all
         place = all.first { $0.plz == saved } ?? all.first { $0.plz == 300800 }
             ?? Place(name: "Bern", plz: 300800, altitude: 540, lat: 46.9466, lon: 7.4441)
         super.init()
@@ -391,7 +411,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSSear
     @objc func checkWarnings() {
         let p = place
         Task { @MainActor in
-            await warn.update(place: p.plz, lat: p.lat, lon: p.lon)
+            // Skipped because a check is running: that one re-checks the place when done.
+            guard await warn.update(place: p.plz, lat: p.lat, lon: p.lon) else { return }
             if warn.matchedPlace != place.plz, !warn.failed { return checkWarnings() }   // place changed meanwhile
             rebuild()
         }
@@ -404,11 +425,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSSear
     }
 
     func period(_ w: WeatherWarning) -> String {
-        let cal = Calendar.current
+        let cal = swissCalendar
         func t(_ d: Date) -> String {
-            let f = DateFormatter()
-            f.dateFormat = cal.isDateInToday(d) ? "HH:mm" : cal.isDateInTomorrow(d) ? "'tomorrow' HH:mm" : "EEE HH:mm"
-            return f.string(from: d)
+            swissFormatter {
+                $0.dateFormat = cal.isDateInToday(d) ? "HH:mm" : cal.isDateInTomorrow(d) ? "'tomorrow' HH:mm" : "EEE HH:mm"
+            }.string(from: d)
         }
         return w.onset <= Date() ? "until \(t(w.expires))" : "\(t(w.onset)) – \(t(w.expires))"
     }
@@ -426,11 +447,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSSear
         }
         menu.addItem(.separator())
         menu.addItem(header("Weather Warnings"))
-        let hhmm = DateFormatter(); hhmm.dateFormat = "HH:mm"
+        let hhmm = swissFormatter { $0.dateFormat = "HH:mm" }
+        let dated = swissFormatter { $0.dateStyle = .short; $0.timeStyle = .short }
         for w in list {
             let t = w.text
-            let issued = Calendar.current.isDateInToday(w.sent) ? hhmm.string(from: w.sent)
-                : DateFormatter.localizedString(from: w.sent, dateStyle: .short, timeStyle: .short)
+            let issued = swissCalendar.isDateInToday(w.sent) ? hhmm.string(from: w.sent) : dated.string(from: w.sent)
             let title = NSMutableAttributedString(string: "\(w.symbol) \(t.event)\n",
                                                   attributes: [.font: NSFont.menuFont(ofSize: 0)])
             title.append(NSAttributedString(string: "\(period(w)) · issued \(issued) by \(t.senderName)",
@@ -465,7 +486,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSSear
         guard let w = warn.warnings(for: place.plz).first(where: { $0.identifier == sender.representedObject as? String })
         else { return }
         let t = w.text
-        let f = DateFormatter(); f.dateStyle = .medium; f.timeStyle = .short
+        let f = swissFormatter { $0.dateStyle = .medium; $0.timeStyle = .short }
         var body = """
             \(t.event) · \(w.colour.capitalized) warning (level \(w.level))
             Area: \(w.area)
@@ -491,10 +512,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSSear
 
     /// Updates the menu bar button and the menu.
     func rebuild() {
+        if let f = fetchedAt, Date().timeIntervalSince(f) > forecastMaxAge { weather = nil }
         if let w = weather {
             var parts: [String] = []
             if prefs.showIcon { parts.append(emoji(for: w.icon)) }
-            if prefs.showTemp { parts.append(String(format: "%.0f°", w.temp.rounded())) }
+            if prefs.showTemp { parts.append(String(format: "%.0f°", shown(w.temp))) }
             if let loc = prefs.locationText(for: place) { parts.append(loc) }
             if parts.isEmpty { parts = [emoji(for: w.icon)] }   // never leave the menu bar empty
             let active = activeWarnings
@@ -503,7 +525,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSSear
             item.button?.toolTip = "\(place.name): \(describe(w.icon))"
                 + active.map { "\n\($0.symbol) \($0.text.event)" }.joined()
                 + (failed ? "\nUpdate failed — showing older data" : "")
-            item.button?.setAccessibilityLabel(String(format: "%@, %.0f degrees, %@", place.name, w.temp.rounded(), describe(w.icon))
+            item.button?.setAccessibilityLabel(String(format: "%@, %.0f degrees, %@", place.name, shown(w.temp), describe(w.icon))
                                                + active.map { ", \($0.colour) warning: \($0.text.event)" }.joined()
                                                + (failed ? ", update failed" : ""))
         } else {
@@ -523,14 +545,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSSear
 
     func fillMenu() {
         menu.removeAllItems()
-        let hhmm = DateFormatter(); hhmm.dateFormat = "HH:mm"
+        let hhmm = swissFormatter { $0.dateFormat = "HH:mm" }
         let now = Date()
-        let cal = Calendar.current
+        let cal = swissCalendar
         menu.addItem(header("\(place.label) · \(place.altitude) m"))
 
         if let w = weather {
-            menu.addItem(row("\(emoji(for: w.icon))  \(String(format: "%.1f", w.temp))°C  \(describe(w.icon))",
-                             speech: String(format: "Now %.1f degrees, %@", w.temp, describe(w.icon))))
+            menu.addItem(row("\(emoji(for: w.icon))  \(String(format: "%.1f", shown(w.temp, 1)))°C  \(describe(w.icon))",
+                             speech: String(format: "Now %.1f degrees, %@", shown(w.temp, 1), describe(w.icon))))
             var details: [String] = [], spoken: [String] = []
             if let s = w.wind {
                 var t = String(format: "Wind %.0f km/h", s)
@@ -547,8 +569,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSSear
                 menu.addItem(row(details.joined(separator: "   "), speech: spoken.joined(separator: ", ")))
             }
             let issued = cal.isDateInToday(w.issued) ? hhmm.string(from: w.issued)
-                : DateFormatter.localizedString(from: w.issued, dateStyle: .medium, timeStyle: .short)
-            menu.addItem(row("Forecast issued \(issued)" + (failed ? "  ·  update failed" : ""), secondary: true))
+                : swissFormatter { $0.dateStyle = .medium; $0.timeStyle = .short }.string(from: w.issued)
+            // Times are Swiss; say so when the Mac is in another time zone.
+            let elsewhere = TimeZone.current.secondsFromGMT(for: now) != swissTime.secondsFromGMT(for: now)
+            menu.addItem(row("Forecast issued \(issued)" + (elsewhere ? " · Swiss time" : "")
+                             + (failed ? "  ·  update failed" : ""), secondary: true))
             addWarnings()
 
             // A forecast from earlier still holds periods that have already ended.
@@ -558,11 +583,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSSear
                 menu.addItem(header("Next 24 hours"))
                 for s in slots {
                     let time = hhmm.string(from: s.time)
-                    let temp = s.temp.map { String(format: "%.0f°", $0) } ?? ""
+                    let temp = s.temp.map { String(format: "%.0f°", shown($0)) } ?? ""
                     let prob = s.rainProb.map { $0 >= 5 ? String(format: "%.0f%%", $0) : "" } ?? ""
                     var speech = "\(time), \(describe(s.icon))"
                     var tip = describe(s.icon)
-                    if let t = s.temp { speech += String(format: ", %.0f degrees", t) }
+                    if let t = s.temp { speech += String(format: ", %.0f degrees", shown(t)) }
                     if let p = s.rainProb, p >= 5 {
                         speech += String(format: ", %.0f percent chance of rain", p)
                         tip += String(format: ", %.0f%% chance of rain", p)
@@ -576,8 +601,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSSear
             if !days.isEmpty {
                 menu.addItem(.separator())
                 menu.addItem(header("Forecast"))
-                let wd = DateFormatter(); wd.dateFormat = "EEE d"
-                let full = DateFormatter(); full.setLocalizedDateFormatFromTemplate("EEEEdMMMM")
+                let wd = swissFormatter { $0.dateFormat = "EEE d" }
+                let full = swissFormatter { $0.setLocalizedDateFormatFromTemplate("EEEEdMMMM") }
                 for d in days.prefix(7) {
                     let today = cal.isDateInToday(d.date), tomorrow = cal.isDateInTomorrow(d.date)
                     let name = today ? "Today" : tomorrow ? "Tomorrow" : wd.string(from: d.date)
@@ -589,8 +614,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSSear
                         : lo == hi ? String(format: hi == 1 ? ", %.0f millimetre of rain" : ", %.0f millimetres of rain", hi)
                         : String(format: ", %.0f to %.0f millimetres of rain", lo, hi)
                     let speech = String(format: "%@, %@, %.0f to %.0f degrees", today || tomorrow ? name : full.string(from: d.date),
-                                        describe(d.icon), d.tmin, d.tmax) + spokenRain
-                    menu.addItem(row(String(format: "%@\t%@\t%.0f°\t%.0f°\t%@", name, emoji(for: d.icon), d.tmin, d.tmax, rain),
+                                        describe(d.icon), shown(d.tmin), shown(d.tmax)) + spokenRain
+                    menu.addItem(row(String(format: "%@\t%@\t%.0f°\t%.0f°\t%@", name, emoji(for: d.icon), shown(d.tmin), shown(d.tmax), rain),
                                      tabs: dayTabs, tip: describe(d.icon) + (rain.isEmpty ? "" : ", \(rain) of rain"),
                                      speech: speech, rain: [4]))
                 }

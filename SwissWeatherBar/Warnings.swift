@@ -121,8 +121,10 @@ final class WarningsClient {
     }
 
     /// Reads the feed and works out which warnings cover the given point.
-    func update(place: Int, lat: Double, lon: Double) async {
-        guard !updating else { return }
+    /// Returns false without doing anything if a check is already running.
+    @discardableResult
+    func update(place: Int, lat: Double, lon: Double) async -> Bool {
+        guard !updating else { return false }
         updating = true
         defer { updating = false }
         do {
@@ -167,6 +169,7 @@ final class WarningsClient {
             NSLog("\(appName): warnings update failed: \(error)")
             failed = true
         }
+        return true
     }
 
     // MARK: Parsing

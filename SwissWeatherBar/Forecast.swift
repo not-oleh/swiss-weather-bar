@@ -14,6 +14,15 @@ import Foundation
 
 let ogdBase = "https://data.geo.admin.ch/ch.meteoschweiz.ogd-local-forecasting"
 
+/// Forecast days and times follow Swiss time, whatever the Mac's time zone: the daily
+/// values are stamped by Swiss calendar day.
+let swissTime = TimeZone(identifier: "Europe/Zurich")!
+let swissCalendar: Calendar = {
+    var c = Calendar(identifier: .gregorian)
+    c.timeZone = swissTime
+    return c
+}()
+
 enum Param: String, CaseIterable {
     case temp = "tre200h0"          // °C, hourly mean
     case icon = "jww003i0"          // pictogram number, preceding 3 h
@@ -132,7 +141,11 @@ final class OGDClient {
     /// Finds the newest run whose files are all published. Returns true if it changed.
     func updateRun() async throws -> Bool {
         let now = Date()
-        let hour = Calendar(identifier: .gregorian).dateInterval(of: .hour, for: now)!.start
+        // runs start on the full UTC hour (in a time zone such as UTC+5:30 the
+        // local hour would never match one)
+        var utcCal = Calendar(identifier: .gregorian)
+        utcCal.timeZone = Self.utc
+        let hour = utcCal.dateInterval(of: .hour, for: now)!.start
         for back in 0..<8 {
             let cand = hour.addingTimeInterval(Double(-back) * 3600)
             if cand == run { return false }
@@ -319,7 +332,7 @@ final class OGDClient {
 
     func forecast(point: Int) async throws -> Weather {
         guard let run = run else { throw OGDError.noRun }
-        let cal = Calendar.current
+        let cal = swissCalendar
         let nextHour = cal.dateInterval(of: .hour, for: Date())!.end   // values are aggregates ending at their timestamp
         let current = Self.ts(nextHour)
 
@@ -376,7 +389,7 @@ final class OGDClient {
 
 func sunTimes(lat: Double, lon: Double, on day: Date = Date()) -> (rise: Date, set: Date)? {
     let rad = Double.pi / 180
-    let noon = Calendar.current.date(bySettingHour: 12, minute: 0, second: 0, of: day)!
+    let noon = swissCalendar.date(bySettingHour: 12, minute: 0, second: 0, of: day)!
     let jd = noon.timeIntervalSince1970 / 86400 + 2440587.5
     let n = (jd - 2451545.0 + 0.0008).rounded()
     let jStar = n - lon / 360
