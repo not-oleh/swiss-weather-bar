@@ -46,7 +46,7 @@ accuracy or availability. For official forecasts and weather warnings, see
 Requires macOS 13 or later, on Apple Silicon or Intel.
 
 1. Download the latest `Swiss-Weather-Bar-x.y.z.zip` from
-   [Releases](https://github.com/olehhnat/swiss-weather-bar/releases/latest).
+   [Releases](https://github.com/not-oleh/swiss-weather-bar/releases/latest).
 2. Unzip it and move **Swiss Weather Bar** to your Applications folder.
 3. Open it. The app is free and not notarised by Apple, so macOS blocks it the first time:
    - **macOS 15 or later:** click **Done**, then open **System Settings → Privacy & Security**,
@@ -62,7 +62,7 @@ choose a place with **Change Location…** instead.
 Requires macOS 13 or later and the Xcode command line tools (`xcode-select --install`).
 
 ```sh
-git clone https://github.com/olehhnat/swiss-weather-bar.git
+git clone https://github.com/not-oleh/swiss-weather-bar.git
 cd swiss-weather-bar
 ./SwissWeatherBar/build.sh
 mv "SwissWeatherBar/Swiss Weather Bar.app" /Applications/
