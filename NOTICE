@@ -10,4 +10,12 @@ subject to the MeteoSwiss Open Data terms of use
 (https://opendatadocs.meteoswiss.ch/general/terms-of-use).
 The MIT Licence does not apply to that data.
 
-This project is not affiliated with or endorsed by MeteoSwiss.
+Weather warnings: issued by MeteoSwiss, via MeteoAlarm (EUMETNET),
+www.meteoalarm.org. Used under terms equivalent to CC BY 4.0, with the additional
+requirements of the MeteoAlarm terms and conditions
+(https://www.meteoalarm.org/en/live/page/terms-and-conditions).
+Time delays between this website and the www.meteoalarm.org website are possible.
+For the most up-to-date awareness information as published by the participating
+National Meteorological and Hydrological Services, please refer to www.meteoalarm.org.
+
+This project is not affiliated with or endorsed by MeteoSwiss, MeteoAlarm or EUMETNET.

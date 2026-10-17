@@ -241,11 +241,15 @@ func loadCache(for plz: Int, maxAge: TimeInterval = 12 * 3600) -> CachedForecast
 
 // MARK: - App
 
-final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSSearchFieldDelegate, CLLocationManagerDelegate {
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSSearchFieldDelegate,
+                         @preconcurrency CLLocationManagerDelegate {   // callbacks arrive on the main thread
     let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     let menu = NSMenu()
     let places = loadPlaces()
     let client = OGDClient()
+    let warn = WarningsClient()
+    var warnTimer: Timer?
     var place: Place
     var weather: Weather?
     var failed = false
@@ -295,19 +299,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSSear
         item.menu = menu
         rebuild()
         refresh()
+        checkWarnings()
         if follow { locate(quiet: true) }
+        // MeteoAlarm's terms allow at most 10 minutes' delay; checking every 5
+        // minutes keeps the average delay around 2½ minutes.
+        warnTimer = Timer.scheduledTimer(timeInterval: 300, target: self, selector: #selector(checkWarnings),
+                                         userInfo: nil, repeats: true)
         // A new forecast run is published hourly; checking every 15 min only costs
         // a few HEAD requests when nothing has changed.
-        timer = Timer.scheduledTimer(withTimeInterval: 900, repeats: true) { [weak self] _ in
-            self?.refresh()
-            if self?.follow == true { self?.locate(quiet: true) }
-        }
-        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
-            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {   // network is often not up yet
-                self?.refresh()
-                if self?.follow == true { self?.locate(quiet: true) }
-            }
-        }
+        timer = Timer.scheduledTimer(timeInterval: 900, target: self, selector: #selector(tick),
+                                     userInfo: nil, repeats: true)
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(didWake),
+                                                          name: NSWorkspace.didWakeNotification, object: nil)
+    }
+
+    @objc func tick() {
+        refresh()
+        if follow { locate(quiet: true) }
+    }
+
+    @objc func didWake() {
+        rebuild()       // warnings from before sleep are out of date: hide them
+        perform(#selector(afterWake), with: nil, afterDelay: 5)   // network is often not up yet
+    }
+
+    @objc func afterWake() {
+        tick()
+        checkWarnings()
     }
 
     @objc func refresh() { load(force: false) }
@@ -364,6 +382,110 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSSear
         failed = false
         rebuild()
         load(force: true)
+        checkWarnings()
+    }
+
+    // MARK: Weather warnings
+
+    @objc func checkWarnings() {
+        let p = place
+        Task { @MainActor in
+            await warn.update(place: p.plz, lat: p.lat, lon: p.lon)
+            if warn.matchedPlace != place.plz, !warn.failed { return checkWarnings() }   // place changed meanwhile
+            rebuild()
+        }
+    }
+
+    /// Warnings in force right now, most severe first.
+    var activeWarnings: [WeatherWarning] {
+        let now = Date()
+        return warn.warnings(for: place.plz).filter { $0.onset <= now }
+    }
+
+    func period(_ w: WeatherWarning) -> String {
+        let cal = Calendar.current
+        func t(_ d: Date) -> String {
+            let f = DateFormatter()
+            f.dateFormat = cal.isDateInToday(d) ? "HH:mm" : cal.isDateInTomorrow(d) ? "'tomorrow' HH:mm" : "EEE HH:mm"
+            return f.string(from: d)
+        }
+        return w.onset <= Date() ? "until \(t(w.expires))" : "\(t(w.onset)) – \(t(w.expires))"
+    }
+
+    func addWarnings() {
+        guard warn.checkedAt != nil || warn.failed else { return }   // first check still running
+        guard warn.isFresh else {
+            menu.addItem(link("Weather warnings unavailable · meteoalarm.org", meteoAlarmSite))
+            return
+        }
+        let list = warn.warnings(for: place.plz)
+        guard !list.isEmpty else {
+            menu.addItem(link("No weather warnings · meteoalarm.org", meteoAlarmSite))
+            return
+        }
+        menu.addItem(.separator())
+        menu.addItem(header("Weather Warnings"))
+        let hhmm = DateFormatter(); hhmm.dateFormat = "HH:mm"
+        for w in list {
+            let t = w.text
+            let issued = Calendar.current.isDateInToday(w.sent) ? hhmm.string(from: w.sent)
+                : DateFormatter.localizedString(from: w.sent, dateStyle: .short, timeStyle: .short)
+            let title = NSMutableAttributedString(string: "\(w.symbol) \(t.event)\n",
+                                                  attributes: [.font: NSFont.menuFont(ofSize: 0)])
+            title.append(NSAttributedString(string: "\(period(w)) · issued \(issued) by \(t.senderName)",
+                                            attributes: [.font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
+                                                         .foregroundColor: NSColor.secondaryLabelColor]))
+            let m = NSMenuItem(title: t.event, action: #selector(showWarning(_:)), keyEquivalent: "")
+            m.attributedTitle = title
+            m.target = self
+            m.representedObject = w.identifier
+            m.toolTip = "\(t.headline) — click for the full warning"
+            m.setAccessibilityLabel("\(w.colour) warning: \(t.event), \(period(w)), issued \(issued) by \(t.senderName)")
+            menu.addItem(m)
+        }
+        menu.addItem(link("Warnings via MeteoAlarm · meteoalarm.org", meteoAlarmSite))
+    }
+
+    func link(_ title: String, _ url: URL) -> NSMenuItem {
+        let m = NSMenuItem(title: title, action: #selector(openLink(_:)), keyEquivalent: "")
+        m.target = self
+        m.representedObject = url
+        m.toolTip = meteoAlarmDisclaimer
+        return m.withSecondaryStyle()
+    }
+
+    @objc func openLink(_ sender: NSMenuItem) {
+        if let u = sender.representedObject as? URL { NSWorkspace.shared.open(u) }
+    }
+
+    /// The warning as published: the texts unshortened, with the issuing service,
+    /// time of issue and MeteoAlarm's disclaimer.
+    @objc func showWarning(_ sender: NSMenuItem) {
+        guard let w = warn.warnings(for: place.plz).first(where: { $0.identifier == sender.representedObject as? String })
+        else { return }
+        let t = w.text
+        let f = DateFormatter(); f.dateStyle = .medium; f.timeStyle = .short
+        var body = """
+            \(t.event) · \(w.colour.capitalized) warning (level \(w.level))
+            Area: \(w.area)
+            Valid: \(f.string(from: w.onset)) – \(f.string(from: w.expires))
+            Issued: \(f.string(from: w.sent)) by \(t.senderName)
+            """
+        if !t.description.isEmpty { body += "\n\n" + t.description }
+        if !t.instruction.isEmpty, !t.description.contains(t.instruction) { body += "\n\n" + t.instruction }
+        body += "\n\nSource: \(t.senderName), via MeteoAlarm (EUMETNET), www.meteoalarm.org.\n\(meteoAlarmDisclaimer)"
+        NSApp.activate(ignoringOtherApps: true)
+        let a = NSAlert()
+        a.messageText = "\(w.symbol) \(t.headline)"
+        a.informativeText = body
+        a.addButton(withTitle: "OK")
+        a.addButton(withTitle: "Open MeteoAlarm")
+        if t.web != nil { a.addButton(withTitle: "Open \(t.senderName)") }
+        switch a.runModal() {
+        case .alertSecondButtonReturn: NSWorkspace.shared.open(meteoAlarmSite)
+        case .alertThirdButtonReturn: if let web = t.web { NSWorkspace.shared.open(web) }
+        default: break
+        }
     }
 
     /// Updates the menu bar button and the menu.
@@ -374,9 +496,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSSear
             if prefs.showTemp { parts.append(String(format: "%.0f°", w.temp.rounded())) }
             if let loc = prefs.locationText(for: place) { parts.append(loc) }
             if parts.isEmpty { parts = [emoji(for: w.icon)] }   // never leave the menu bar empty
+            let active = activeWarnings
+            if let top = active.first { parts.insert(top.symbol, at: 0) }
             item.button?.title = parts.joined(separator: " ") + (failed ? " ⚠︎" : "")
-            item.button?.toolTip = "\(place.name): \(describe(w.icon))" + (failed ? "\nUpdate failed — showing older data" : "")
+            item.button?.toolTip = "\(place.name): \(describe(w.icon))"
+                + active.map { "\n\($0.symbol) \($0.text.event)" }.joined()
+                + (failed ? "\nUpdate failed — showing older data" : "")
             item.button?.setAccessibilityLabel(String(format: "%@, %.0f degrees, %@", place.name, w.temp.rounded(), describe(w.icon))
+                                               + active.map { ", \($0.colour) warning: \($0.text.event)" }.joined()
                                                + (failed ? ", update failed" : ""))
         } else {
             item.button?.title = failed ? "⚠︎ Weather" : "…"
@@ -388,7 +515,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSSear
 
     /// The menu is also refilled each time it opens, so "Today", the next 24 hours
     /// and sunrise follow the clock even when no new forecast has arrived.
-    func menuNeedsUpdate(_ m: NSMenu) { fillMenu() }
+    func menuNeedsUpdate(_ m: NSMenu) {
+        fillMenu()
+        if let c = warn.checkedAt, Date().timeIntervalSince(c) > 300 { checkWarnings() }   // timer ran late
+    }
 
     func fillMenu() {
         menu.removeAllItems()
@@ -418,6 +548,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSSear
             let issued = cal.isDateInToday(w.issued) ? hhmm.string(from: w.issued)
                 : DateFormatter.localizedString(from: w.issued, dateStyle: .medium, timeStyle: .short)
             menu.addItem(row("Forecast issued \(issued)" + (failed ? "  ·  update failed" : ""), secondary: true))
+            addWarnings()
 
             // A forecast from earlier still holds periods that have already ended.
             let slots = w.slots.filter { $0.time.addingTimeInterval(3 * 3600) > now }
@@ -460,8 +591,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSSear
             }
         } else if failed {
             menu.addItem(row("Could not load the forecast — retrying shortly"))
+            addWarnings()
         } else {
             menu.addItem(row("Loading…"))
+            addWarnings()
         }
 
         menu.addItem(.separator())
@@ -552,12 +685,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSSear
             Source: MeteoSwiss. Forecast data is MeteoSwiss Open Government Data, \
             used under CC BY 4.0. This app is an independent project and is not \
             affiliated with or endorsed by MeteoSwiss. Forecasts are provided \
-            without any guarantee of accuracy; for official warnings see meteoswiss.admin.ch.
+            without any guarantee of accuracy; for official forecasts and warnings \
+            see meteoswiss.admin.ch.
+
+            Weather warnings are issued by MeteoSwiss and come via MeteoAlarm \
+            (EUMETNET), www.meteoalarm.org, used under terms equivalent to CC BY 4.0. \
+            \(meteoAlarmDisclaimer)
             """
         a.addButton(withTitle: "OK")
         a.addButton(withTitle: "Open Data Terms")
-        if a.runModal() == .alertSecondButtonReturn {
+        a.addButton(withTitle: "MeteoAlarm Terms")
+        switch a.runModal() {
+        case .alertSecondButtonReturn:
             NSWorkspace.shared.open(URL(string: "https://opendatadocs.meteoswiss.ch/general/terms-of-use")!)
+        case .alertThirdButtonReturn:
+            NSWorkspace.shared.open(URL(string: "https://www.meteoalarm.org/en/live/page/terms-and-conditions")!)
+        default: break
         }
     }
 
@@ -720,6 +863,6 @@ extension NSMenuItem {
 
 let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
-let delegate = AppDelegate()
+let delegate = MainActor.assumeIsolated { AppDelegate() }   // top-level code runs on the main thread
 app.delegate = delegate
 app.run()
