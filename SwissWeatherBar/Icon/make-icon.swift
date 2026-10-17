@@ -1,4 +1,4 @@
-// Draws the app icon (sun behind a cloud on a blue sky) and writes AppIcon.icns.
+// Draws the app icon (white alpine peak, sun and cloud on Swiss red) and writes AppIcon.icns.
 // Original artwork drawn in code: no SF Symbols, emoji or third-party graphics.
 //
 //   swift Icon/make-icon.swift Icon/AppIcon.icns
@@ -23,25 +23,38 @@ func draw() {
     shadow.shadowBlurRadius = 24
     shadow.shadowOffset = NSSize(width: 0, height: -10)
     shadow.set()
-    color(0x2F74E8).setFill()
+    color(0xDA291C).setFill()
     shape.fill()
     NSGraphicsContext.restoreGraphicsState()
 
     NSGraphicsContext.saveGraphicsState()
     shape.addClip()
-    // sky: deep blue at the top to light blue at the bottom
-    NSGradient(starting: color(0x1F5FD6), ending: color(0x8FD0FF))!.draw(in: body, angle: -90)
+    // Swiss red, slightly deeper at the top
+    NSGradient(starting: color(0xB81A12), ending: color(0xEE3B2E))!.draw(in: body, angle: -90)
 
     // sun with a glow, upper right
     let sun = NSPoint(x: 615, y: 625)
-    NSGradient(colors: [color(0xFFE27A, 0.55), color(0xFFE27A, 0.18), color(0xFFE27A, 0)],
+    NSGradient(colors: [color(0xFFD9A0, 0.55), color(0xFFD9A0, 0.18), color(0xFFD9A0, 0)],
                atLocations: [0, 0.55, 1], colorSpace: .sRGB)!
         .draw(fromCenter: sun, radius: 150, toCenter: sun, radius: 330, options: [])
     let disc = NSBezierPath(ovalIn: NSRect(x: sun.x - 165, y: sun.y - 165, width: 330, height: 330))
     NSGraphicsContext.saveGraphicsState()
     disc.addClip()
-    NSGradient(starting: color(0xFFE45C), ending: color(0xFFA824))!.draw(in: disc.bounds, angle: -60)
+    NSGradient(starting: color(0xFFF1B8), ending: color(0xFFC247))!.draw(in: disc.bounds, angle: -60)
     NSGraphicsContext.restoreGraphicsState()
+
+    // alpine peaks (white, lit side / shaded side), clipped by the icon body
+    func poly(_ pts: [(CGFloat, CGFloat)]) -> NSBezierPath {
+        let p = NSBezierPath(); p.move(to: NSPoint(x: pts[0].0, y: pts[0].1))
+        for q in pts.dropFirst() { p.line(to: NSPoint(x: q.0, y: q.1)) }
+        p.close(); return p
+    }
+    color(0xE6AEA8).setFill()   // back peak
+    poly([(470, 100), (720, 470), (960, 100)]).fill()
+    color(0xFFFFFF).setFill()   // main peak, lit face
+    poly([(30, 100), (390, 620), (450, 100)]).fill()
+    color(0xF2CFCA).setFill()   // main peak, shaded face
+    poly([(390, 620), (790, 100), (450, 100)]).fill()
 
     // cloud in front: three bumps on a pill-shaped base. Each outer bump fully
     // contains the pill's rounded end (and touches its bottom), so the outline
@@ -53,15 +66,20 @@ func draw() {
         cloud.append(NSBezierPath(ovalIn: NSRect(x: x - r, y: y - r, width: 2 * r, height: 2 * r)))
     }
 
+    var xf = AffineTransform(translationByX: 610, byY: 520)
+    xf.scale(0.5)
+    xf.translate(x: -515, y: -380)
+    cloud.transform(using: xf)
+
     let ctx = NSGraphicsContext.current!.cgContext
     ctx.saveGState()
-    ctx.setShadow(offset: CGSize(width: 0, height: -14), blur: 30, color: color(0x0B3A8C, 0.35).cgColor)
+    ctx.setShadow(offset: CGSize(width: 0, height: -14), blur: 30, color: color(0x5A0A05, 0.4).cgColor)
     ctx.beginTransparencyLayer(auxiliaryInfo: nil)
     NSColor.white.setFill()
     cloud.fill()
     NSGraphicsContext.saveGraphicsState()
     cloud.addClip()
-    NSGradient(starting: color(0xFFFFFF), ending: color(0xDCE8F7))!.draw(in: cloud.bounds, angle: -90)
+    NSGradient(starting: color(0xFFFFFF), ending: color(0xF1E4E2))!.draw(in: cloud.bounds, angle: -90)
     NSGraphicsContext.restoreGraphicsState()
     ctx.endTransparencyLayer()
     ctx.restoreGState()
