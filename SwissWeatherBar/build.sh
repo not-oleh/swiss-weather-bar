@@ -13,7 +13,7 @@ trap 'rm -rf "$TMP"' EXIT
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 for ARCH in arm64 x86_64; do
-  swiftc -O -target "$ARCH-apple-macos13.0" -o "$TMP/$ARCH" Forecast.swift Warnings.swift main.swift
+  swiftc -O -target "$ARCH-apple-macos13.0" -o "$TMP/$ARCH" *.swift
 done
 lipo -create "$TMP/arm64" "$TMP/x86_64" -output "$APP/Contents/MacOS/SwissWeatherBar"
 cp places.tsv "$APP/Contents/Resources/"
