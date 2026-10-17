@@ -4,9 +4,11 @@
 ![macOS 13+](https://img.shields.io/badge/macOS-13%2B-blue)
 [![MIT licence](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
 
-A small macOS menu bar app that shows the local weather forecast for any Swiss postcode.
+<table>
+<tr>
+<td valign="top">
 
-<p align="center"><img src="docs/screenshot.png" alt="Swiss Weather Bar menu showing current conditions, the next 24 hours and a 7-day forecast" width="330"></p>
+A small macOS menu bar app that shows the local weather forecast for any Swiss postcode.
 
 - Current temperature and conditions in the menu bar
 - Weather warnings for your area from MeteoSwiss (via MeteoAlarm), with a 🟡 🟠 🔴 badge in the menu bar
@@ -19,6 +21,13 @@ A small macOS menu bar app that shows the local weather forecast for any Swiss p
 - In English, German, French and Italian, following your Mac's language
 
 Free and open source. No account, no tracking, no ads.
+
+</td>
+<td valign="top" width="340">
+<img src="docs/screenshot.png" alt="Swiss Weather Bar menu showing current conditions, the next 24 hours and a 7-day forecast" width="340">
+</td>
+</tr>
+</table>
 
 ## Data source
 
