@@ -32,13 +32,15 @@ func loadPlaces() -> [Place] {
     }
 }
 
-/// Nearest place and its distance in metres (equirectangular approximation).
+/// Distance in metres (equirectangular approximation, fine at Swiss scale).
+func distance(_ c: CLLocationCoordinate2D, _ p: Place) -> Double {
+    let dx = (p.lon - c.longitude) * cos(c.latitude * .pi / 180), dy = p.lat - c.latitude
+    return (dx * dx + dy * dy).squareRoot() * 111_195
+}
+
+/// Nearest place and its distance in metres.
 func nearest(to c: CLLocationCoordinate2D, in places: [Place]) -> (Place, Double)? {
-    let k = cos(c.latitude * .pi / 180)
-    return places.map { p -> (Place, Double) in
-        let dx = (p.lon - c.longitude) * k, dy = p.lat - c.latitude
-        return (p, (dx * dx + dy * dy).squareRoot() * 111_195)
-    }.min { $0.1 < $1.1 }
+    places.map { ($0, distance(c, $0)) }.min { $0.1 < $1.1 }
 }
 
 // MARK: - Weather symbols
@@ -109,7 +111,7 @@ func compass(_ deg: Int) -> String {
 /// A non-interactive row. It is drawn by a custom view because AppKit greys out the
 /// text of disabled menu items; tab-separated columns line up on the given tab stops.
 func row(_ text: String, tabs: [NSTextTab] = [], tip: String? = nil, secondary: Bool = false) -> NSMenuItem {
-    let inset: CGFloat = 14
+    let inset = rowInset
     let font = secondary ? NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
                          : NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
     let color: NSColor = secondary ? .secondaryLabelColor : .labelColor
@@ -132,11 +134,15 @@ func row(_ text: String, tabs: [NSTextTab] = [], tip: String? = nil, secondary: 
         view.addSubview(label)
     }
     view.frame = NSRect(x: 0, y: 0, width: max(260, maxX + inset), height: height)
+    view.toolTip = tip      // a menu item with a custom view ignores its own toolTip
     let m = NSMenuItem()
     m.view = view
-    m.toolTip = tip
     return m
 }
+
+/// Left edge of the text in standard menu items (after the checkmark column),
+/// so custom rows line up with the headers and commands.
+let rowInset: CGFloat = 22
 
 func header(_ title: String) -> NSMenuItem {
     if #available(macOS 14, *) { return .sectionHeader(title: title) }
@@ -208,6 +214,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSSearchFieldDelegate,
     let locator = CLLocationManager()
     var locating = false
     var locateQuietly = false    // automatic attempt: no error alerts
+    let switchMargin = 1_000.0   // metres; see locationManager(_:didUpdateLocations:)
 
     /// Follow the Mac's location (on by default). Picking a place by hand turns it off.
     var follow: Bool {
@@ -514,7 +521,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSSearchFieldDelegate,
         guard let (p, dist) = nearest(to: c, in: places), dist < 20_000 else {
             return locationFailed("Your location is outside Switzerland, where local forecasts are not available. Choose a place with Change Location….")
         }
-        if p.plz != place.plz { select(p, manual: false) }
+        guard p.plz != place.plz else { return }
+        // Wi-Fi positioning wobbles by a few hundred metres; near the midpoint between
+        // two postcodes that would flip the place (and refetch) on every check.
+        // Automatic checks only switch when the new postcode is clearly closer.
+        if locateQuietly, distance(c, place) - dist < switchMargin { return }
+        select(p, manual: false)
     }
 
     func locationManager(_ m: CLLocationManager, didFailWithError error: Error) {
