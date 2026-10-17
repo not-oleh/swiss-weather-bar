@@ -55,5 +55,5 @@ Developer ID removes that warning.
 
 ## Licence
 
-The code is released under the [MIT Licence](LICENSE). Forecast data and `places.tsv`
+The code is released under the [MIT Licence](LICENSE). See [NOTICE](NOTICE) for the data terms. Forecast data and `places.tsv`
 remain © MeteoSwiss, used under CC BY 4.0.

@@ -1,0 +1,13 @@
+Swiss Weather Bar
+Copyright (c) 2026 not-oleh
+
+The source code is licensed under the MIT Licence (see LICENSE).
+
+Forecast data and SwissWeatherBar/places.tsv: Source: MeteoSwiss.
+They come from MeteoSwiss Open Government Data (ogd-local-forecasting) and are
+licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/),
+subject to the MeteoSwiss Open Data terms of use
+(https://opendatadocs.meteoswiss.ch/general/terms-of-use).
+The MIT Licence does not apply to that data.
+
+This project is not affiliated with or endorsed by MeteoSwiss.
