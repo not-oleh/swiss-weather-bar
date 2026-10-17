@@ -6,6 +6,8 @@
 
 A small macOS menu bar app that shows the local weather forecast for any Swiss postcode.
 
+<p align="center"><img src="docs/screenshot.png" alt="Swiss Weather Bar menu showing current conditions, the next 24 hours and a 7-day forecast" width="330"></p>
+
 - Current temperature and conditions in the menu bar
 - Weather warnings for your area from MeteoSwiss (via MeteoAlarm), with a 🟡 🟠 🔴 badge in the menu bar
 - Wind, gusts, sunrise and sunset
