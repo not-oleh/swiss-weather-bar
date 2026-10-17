@@ -1,0 +1,2 @@
+NSLocationUsageDescription = "Votre position sert à afficher les prévisions pour le NPA suisse le plus proche.";
+NSLocationWhenInUseUsageDescription = "Votre position sert à afficher les prévisions pour le NPA suisse le plus proche.";

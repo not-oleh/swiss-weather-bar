@@ -17,11 +17,14 @@ for ARCH in arm64 x86_64; do
 done
 lipo -create "$TMP/arm64" "$TMP/x86_64" -output "$APP/Contents/MacOS/SwissWeatherBar"
 cp places.tsv "$APP/Contents/Resources/"
+cp -R Localization/*.lproj "$APP/Contents/Resources/"   # English, German, French, Italian
 cp Icon/AppIcon.icns "$APP/Contents/Resources/"   # regenerate with: swift Icon/make-icon.swift Icon/AppIcon.icns
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
+<key>CFBundleDevelopmentRegion</key><string>en</string>
+<key>CFBundleLocalizations</key><array><string>en</string><string>de</string><string>fr</string><string>it</string></array>
 <key>CFBundleExecutable</key><string>SwissWeatherBar</string>
 <key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundleIdentifier</key><string>io.github.swissweatherbar</string>

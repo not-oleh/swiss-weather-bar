@@ -7,10 +7,10 @@ struct MenuBarPrefs {
         case none, name, postcode, both
         var title: String {
             switch self {
-            case .none: return "Hidden"
-            case .name: return "Place Name"
-            case .postcode: return "Postcode"
-            case .both: return "Postcode and Name"
+            case .none: return tr("Hidden")
+            case .name: return tr("Place Name")
+            case .postcode: return tr("Postcode")
+            case .both: return tr("Postcode and Name")
             }
         }
     }

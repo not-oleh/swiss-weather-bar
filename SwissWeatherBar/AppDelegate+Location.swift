@@ -18,7 +18,7 @@ extension AppDelegate {
         locating = true
         switch locator.authorizationStatus {
         case .notDetermined: locator.requestWhenInUseAuthorization()   // continues in the callback
-        case .denied, .restricted: locationFailed("Location access is off for \(appName). Turn it on in System Settings → Privacy & Security → Location Services.", issue: .denied)
+        case .denied, .restricted: locationFailed(tr("Location access is off for %@. Turn it on in System Settings → Privacy & Security → Location Services.", appName), issue: .denied)
         default: locator.requestLocation()
         }
     }
@@ -27,7 +27,7 @@ extension AppDelegate {
         guard locating else { return }
         switch m.authorizationStatus {
         case .notDetermined: break
-        case .denied, .restricted: locationFailed("Location access was not granted.", issue: .denied)
+        case .denied, .restricted: locationFailed(tr("Location access was not granted."), issue: .denied)
         default: m.requestLocation()
         }
     }
@@ -36,7 +36,7 @@ extension AppDelegate {
         guard locating, let c = locs.last?.coordinate else { return }
         locating = false
         guard let (p, dist) = nearest(to: c, in: places), dist < 20_000 else {
-            return locationFailed("Your location is outside Switzerland, where local forecasts are not available. Choose a place with Change Location….",
+            return locationFailed(tr("Your location is outside Switzerland, where local forecasts are not available. Choose a place with Change Location…."),
                                   issue: .outside)
         }
         if locationIssue != nil { locationIssue = nil; rebuild() }
@@ -50,7 +50,7 @@ extension AppDelegate {
 
     func locationManager(_ m: CLLocationManager, didFailWithError error: Error) {
         guard locating else { return }
-        locationFailed("Could not determine your location (\(error.localizedDescription)).")
+        locationFailed(tr("Could not determine your location (%@).", error.localizedDescription))
     }
 
     /// `issue` is a lasting reason (shown in the menu); without one the failure is
@@ -62,7 +62,7 @@ extension AppDelegate {
         if locateQuietly { return }
         NSApp.activate(ignoringOtherApps: true)
         let a = NSAlert()
-        a.messageText = "Current location unavailable"
+        a.messageText = tr("Current location unavailable")
         a.informativeText = msg
         a.runModal()
     }

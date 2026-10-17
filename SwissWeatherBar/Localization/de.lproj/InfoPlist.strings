@@ -1,0 +1,2 @@
+NSLocationUsageDescription = "Dein Standort wird verwendet, um die Prognose für die nächstgelegene Schweizer Postleitzahl anzuzeigen.";
+NSLocationWhenInUseUsageDescription = "Dein Standort wird verwendet, um die Prognose für die nächstgelegene Schweizer Postleitzahl anzuzeigen.";

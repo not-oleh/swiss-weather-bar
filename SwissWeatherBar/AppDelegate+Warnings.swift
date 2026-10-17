@@ -22,29 +22,39 @@ extension AppDelegate {
         return warn.warnings(for: place.plz).filter { $0.onset <= now }
     }
 
+    /// "Yellow warning", "Orange warning" or "Red warning", in the user's language.
+    func levelName(_ w: WeatherWarning) -> String {
+        switch w.colour {
+        case "red": return tr("Red warning")
+        case "orange": return tr("Orange warning")
+        default: return tr("Yellow warning")
+        }
+    }
+
     func period(_ w: WeatherWarning) -> String {
         let cal = swissCalendar
         func t(_ d: Date) -> String {
-            swissFormatter {
-                $0.dateFormat = cal.isDateInToday(d) ? "HH:mm" : cal.isDateInTomorrow(d) ? "'tomorrow' HH:mm" : "EEE HH:mm"
-            }.string(from: d)
+            let time = swissFormatter { $0.dateFormat = "HH:mm" }.string(from: d)
+            if cal.isDateInToday(d) { return time }
+            if cal.isDateInTomorrow(d) { return tr("tomorrow %@", time) }
+            return swissFormatter { $0.setLocalizedDateFormatFromTemplate("EEEHHmm") }.string(from: d)
         }
-        return w.onset <= Date() ? "until \(t(w.expires))" : "\(t(w.onset)) – \(t(w.expires))"
+        return w.onset <= Date() ? tr("until %@", t(w.expires)) : "\(t(w.onset)) – \(t(w.expires))"
     }
 
     func addWarnings() {
         guard warn.checkedAt != nil || warn.failed else { return }   // first check still running
         guard warn.isFresh else {
-            menu.addItem(link("Weather warnings unavailable · meteoalarm.org", meteoAlarmSite))
+            menu.addItem(link(tr("Weather warnings unavailable") + " · meteoalarm.org", meteoAlarmSite))
             return
         }
         let list = warn.warnings(for: place.plz)
         guard !list.isEmpty else {
-            menu.addItem(link("No weather warnings · meteoalarm.org", meteoAlarmSite))
+            menu.addItem(link(tr("No weather warnings") + " · meteoalarm.org", meteoAlarmSite))
             return
         }
         menu.addItem(.separator())
-        menu.addItem(header("Weather Warnings"))
+        menu.addItem(header(tr("Weather Warnings")))
         let hhmm = swissFormatter { $0.dateFormat = "HH:mm" }
         let dated = swissFormatter { $0.dateStyle = .short; $0.timeStyle = .short }
         for w in list {
@@ -52,18 +62,18 @@ extension AppDelegate {
             let issued = swissCalendar.isDateInToday(w.sent) ? hhmm.string(from: w.sent) : dated.string(from: w.sent)
             let title = NSMutableAttributedString(string: "\(w.symbol) \(t.event)\n",
                                                   attributes: [.font: NSFont.menuFont(ofSize: 0)])
-            title.append(NSAttributedString(string: "\(period(w)) · issued \(issued) by \(t.senderName)",
+            title.append(NSAttributedString(string: tr("%@ · issued %@ by %@", period(w), issued, t.senderName),
                                             attributes: [.font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
                                                          .foregroundColor: NSColor.secondaryLabelColor]))
             let m = NSMenuItem(title: t.event, action: #selector(showWarning(_:)), keyEquivalent: "")
             m.attributedTitle = title
             m.target = self
             m.representedObject = w.identifier
-            m.toolTip = "\(t.headline) — click for the full warning"
-            m.setAccessibilityLabel("\(w.colour) warning: \(t.event), \(period(w)), issued \(issued) by \(t.senderName)")
+            m.toolTip = tr("%@ — click for the full warning", t.headline)
+            m.setAccessibilityLabel(tr("%@: %@, %@, issued %@ by %@", levelName(w), t.event, period(w), issued, t.senderName))
             menu.addItem(m)
         }
-        menu.addItem(link("Warnings via MeteoAlarm · meteoalarm.org", meteoAlarmSite))
+        menu.addItem(link(tr("Warnings via MeteoAlarm") + " · meteoalarm.org", meteoAlarmSite))
     }
 
     func link(_ title: String, _ url: URL) -> NSMenuItem {
@@ -85,22 +95,21 @@ extension AppDelegate {
         else { return }
         let t = w.text
         let f = swissFormatter { $0.dateStyle = .medium; $0.timeStyle = .short }
-        var body = """
-            \(t.event) · \(w.colour.capitalized) warning (level \(w.level))
-            Area: \(w.area)
-            Valid: \(f.string(from: w.onset)) – \(f.string(from: w.expires))
-            Issued: \(f.string(from: w.sent)) by \(t.senderName)
-            """
+        var body = [tr("%@ · %@ (level %ld)", t.event, levelName(w), w.level),
+                    tr("Area: %@", w.area),
+                    tr("Valid: %@ – %@", f.string(from: w.onset), f.string(from: w.expires)),
+                    tr("Issued: %@ by %@", f.string(from: w.sent), t.senderName)].joined(separator: "\n")
         if !t.description.isEmpty { body += "\n\n" + t.description }
         if !t.instruction.isEmpty, !t.description.contains(t.instruction) { body += "\n\n" + t.instruction }
-        body += "\n\nSource: \(t.senderName), via MeteoAlarm (EUMETNET), www.meteoalarm.org.\n\(meteoAlarmDisclaimer)"
+        // MeteoAlarm's disclaimer stays in English: their terms ask for this exact text.
+        body += "\n\n" + tr("Source: %@, via MeteoAlarm (EUMETNET), www.meteoalarm.org.", t.senderName) + "\n" + meteoAlarmDisclaimer
         NSApp.activate(ignoringOtherApps: true)
         let a = NSAlert()
         a.messageText = "\(w.symbol) \(t.headline)"
         a.informativeText = body
-        a.addButton(withTitle: "OK")
-        a.addButton(withTitle: "Open MeteoAlarm")
-        if t.web != nil { a.addButton(withTitle: "Open \(t.senderName)") }
+        a.addButton(withTitle: tr("OK"))
+        a.addButton(withTitle: tr("Open MeteoAlarm"))
+        if t.web != nil { a.addButton(withTitle: tr("Open %@", t.senderName)) }
         switch a.runModal() {
         case .alertSecondButtonReturn: NSWorkspace.shared.open(meteoAlarmSite)
         case .alertThirdButtonReturn: if let web = t.web { NSWorkspace.shared.open(web) }

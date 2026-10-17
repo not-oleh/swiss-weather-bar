@@ -7,35 +7,35 @@ import Foundation
 func describe(_ icon: Int) -> String {
     let night = icon > 100
     switch night ? icon - 100 : icon {
-    case 1: return night ? "clear" : "sunny"
-    case 2: return night ? "mostly clear" : "mostly sunny"
-    case 3: return "partly cloudy"
-    case 4: return "overcast"
-    case 5: return "very cloudy"
-    case 6, 29, 32: return "sunny spells with showers"
-    case 7, 31: return "sunny spells with sleet"
-    case 8, 30: return "sunny spells with snow showers"
-    case 9: return "cloudy with showers"
-    case 10: return "cloudy with sleet"
-    case 11: return "cloudy with snow showers"
-    case 12, 13, 36: return "sunny spells, thunderstorms possible"
-    case 14: return "light rain"
-    case 15: return "light sleet"
-    case 16: return "light snow"
-    case 17: return "rain at times"
-    case 18: return "sleet at times"
-    case 19: return "snow at times"
-    case 20: return "rain"
-    case 21: return "sleet"
-    case 22: return "heavy snow"
-    case 23, 40, 41: return "cloudy, thunderstorms possible"
-    case 24, 25, 38: return "thunderstorms"
-    case 26, 35: return "high cloud"
-    case 27: return "low cloud"
-    case 28: return "fog"
-    case 33: return "brief sun, frequent rain"
-    case 34: return "brief sun, frequent snow"
-    case 37, 39, 42: return "thundery snow showers"
+    case 1: return night ? tr("clear") : tr("sunny")
+    case 2: return night ? tr("mostly clear") : tr("mostly sunny")
+    case 3: return tr("partly cloudy")
+    case 4: return tr("overcast")
+    case 5: return tr("very cloudy")
+    case 6, 29, 32: return tr("sunny spells with showers")
+    case 7, 31: return tr("sunny spells with sleet")
+    case 8, 30: return tr("sunny spells with snow showers")
+    case 9: return tr("cloudy with showers")
+    case 10: return tr("cloudy with sleet")
+    case 11: return tr("cloudy with snow showers")
+    case 12, 13, 36: return tr("sunny spells, thunderstorms possible")
+    case 14: return tr("light rain")
+    case 15: return tr("light sleet")
+    case 16: return tr("light snow")
+    case 17: return tr("rain at times")
+    case 18: return tr("sleet at times")
+    case 19: return tr("snow at times")
+    case 20: return tr("rain")
+    case 21: return tr("sleet")
+    case 22: return tr("heavy snow")
+    case 23, 40, 41: return tr("cloudy, thunderstorms possible")
+    case 24, 25, 38: return tr("thunderstorms")
+    case 26, 35: return tr("high cloud")
+    case 27: return tr("low cloud")
+    case 28: return tr("fog")
+    case 33: return tr("brief sun, frequent rain")
+    case 34: return tr("brief sun, frequent snow")
+    case 37, 39, 42: return tr("thundery snow showers")
     default: return "—"
     }
 }
@@ -60,10 +60,11 @@ func emoji(for icon: Int) -> String {
 }
 
 func compass(_ deg: Int) -> String {
-    ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][Int((Double(deg) / 45).rounded()) % 8]
+    tr("N NE E SE S SW W NW").split(separator: " ").map(String.init)[Int((Double(deg) / 45).rounded()) % 8]
 }
 
 /// Wind direction for VoiceOver ("north-east" rather than "NE").
 func spokenCompass(_ deg: Int) -> String {
-    ["north", "north-east", "east", "south-east", "south", "south-west", "west", "north-west"][Int((Double(deg) / 45).rounded()) % 8]
+    tr("north|north-east|east|south-east|south|south-west|west|north-west").split(separator: "|")
+        .map(String.init)[Int((Double(deg) / 45).rounded()) % 8]
 }

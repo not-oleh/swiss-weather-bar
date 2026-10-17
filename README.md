@@ -10,6 +10,7 @@ A small macOS menu bar app that shows the local weather forecast for any Swiss p
 - Search by place name or postcode, or follow your current location (on by default)
 - Recent locations, Open at Login
 - VoiceOver reads each forecast row as a sentence
+- In English, German, French and Italian, following your Mac's language
 
 Free and open source. No account, no tracking, no ads.
 
