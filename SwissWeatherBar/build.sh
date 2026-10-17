@@ -4,8 +4,8 @@
 # ./build.sh release  also create dist/Swiss-Weather-Bar-<version>.zip for a GitHub release
 set -e
 cd "$(dirname "$0")"
-VERSION="1.1.0"
-BUILD="4"
+VERSION="1.2.0"
+BUILD="5"
 APP="Swiss Weather Bar.app"
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
