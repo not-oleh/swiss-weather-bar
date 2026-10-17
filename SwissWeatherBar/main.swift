@@ -106,11 +106,18 @@ func compass(_ deg: Int) -> String {
     ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][Int((Double(deg) / 45).rounded()) % 8]
 }
 
+/// Wind direction for VoiceOver ("north-east" rather than "NE").
+func spokenCompass(_ deg: Int) -> String {
+    ["north", "north-east", "east", "south-east", "south", "south-west", "west", "north-west"][Int((Double(deg) / 45).rounded()) % 8]
+}
+
 // MARK: - Menu helpers
 
 /// A non-interactive row. It is drawn by a custom view because AppKit greys out the
 /// text of disabled menu items; tab-separated columns line up on the given tab stops.
-func row(_ text: String, tabs: [NSTextTab] = [], tip: String? = nil, secondary: Bool = false) -> NSMenuItem {
+/// VoiceOver reads the row as one sentence: `speech`, or the text without the tabs.
+func row(_ text: String, tabs: [NSTextTab] = [], tip: String? = nil, secondary: Bool = false,
+         speech: String? = nil) -> NSMenuItem {
     let inset = rowInset
     let font = secondary ? NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
                          : NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
@@ -122,6 +129,7 @@ func row(_ text: String, tabs: [NSTextTab] = [], tip: String? = nil, secondary: 
         let label = NSTextField(labelWithString: c)
         label.font = font
         label.textColor = color
+        label.setAccessibilityElement(false)
         label.sizeToFit()
         let w = label.frame.width
         var x = inset
@@ -135,6 +143,9 @@ func row(_ text: String, tabs: [NSTextTab] = [], tip: String? = nil, secondary: 
     }
     view.frame = NSRect(x: 0, y: 0, width: max(260, maxX + inset), height: height)
     view.toolTip = tip      // a menu item with a custom view ignores its own toolTip
+    view.setAccessibilityElement(true)
+    view.setAccessibilityRole(.staticText)
+    view.setAccessibilityLabel(speech ?? text.split(separator: "\t").joined(separator: ", "))
     let m = NSMenuItem()
     m.view = view
     return m
@@ -200,10 +211,39 @@ struct MenuBarPrefs {
 
 let prefs = MenuBarPrefs()
 
+// MARK: - Offline cache
+// The last forecast is kept on disk so the menu has something to show at launch,
+// even when the network is not up yet.
+
+struct CachedForecast: Codable {
+    let plz: Int
+    let fetchedAt: Date
+    let weather: Weather
+}
+
+let cacheURL: URL = {
+    let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent(Bundle.main.bundleIdentifier ?? "SwissWeatherBar", isDirectory: true)
+    return dir.appendingPathComponent("forecast.json")
+}()
+
+func saveCache(_ c: CachedForecast) {
+    try? FileManager.default.createDirectory(at: cacheURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try? JSONEncoder().encode(c).write(to: cacheURL, options: .atomic)
+}
+
+/// The cached forecast for `plz`, unless it is too old to pass for current conditions.
+func loadCache(for plz: Int, maxAge: TimeInterval = 12 * 3600) -> CachedForecast? {
+    guard let d = try? Data(contentsOf: cacheURL), let c = try? JSONDecoder().decode(CachedForecast.self, from: d),
+          c.plz == plz, Date().timeIntervalSince(c.fetchedAt) < maxAge else { return nil }
+    return c
+}
+
 // MARK: - App
 
-final class AppDelegate: NSObject, NSApplicationDelegate, NSSearchFieldDelegate, CLLocationManagerDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSSearchFieldDelegate, CLLocationManagerDelegate {
     let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+    let menu = NSMenu()
     let places = loadPlaces()
     let client = OGDClient()
     var place: Place
@@ -217,6 +257,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSSearchFieldDelegate,
     var locating = false
     var locateQuietly = false    // automatic attempt: no error alerts
     let switchMargin = 1_000.0   // metres; see locationManager(_:didUpdateLocations:)
+    /// Why "Follow My Location" is not following right now; shown under it in the menu.
+    enum LocationIssue { case outside, denied }
+    var locationIssue: LocationIssue?
 
     /// Follow the Mac's location (on by default). Picking a place by hand turns it off.
     var follow: Bool {
@@ -244,6 +287,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSSearchFieldDelegate,
     }
 
     func applicationDidFinishLaunching(_ n: Notification) {
+        if let c = loadCache(for: place.plz) {
+            weather = c.weather
+            fetchedAt = c.fetchedAt     // refresh() still downloads: the client has no run yet
+        }
+        menu.delegate = self
+        item.menu = menu
         rebuild()
         refresh()
         if follow { locate(quiet: true) }
@@ -278,8 +327,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSSearchFieldDelegate,
             do {
                 let newRun = try await client.updateRun()
                 if newRun || force || current == nil || stale {
-                    result = try await client.forecast(point: point)
+                    let w = try await client.forecast(point: point)
+                    result = w
                     fetchedAt = Date()
+                    saveCache(CachedForecast(plz: point, fetchedAt: Date(), weather: w))
                 } else {
                     result = current
                 }
@@ -315,8 +366,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSSearchFieldDelegate,
         load(force: true)
     }
 
+    /// Updates the menu bar button and the menu.
     func rebuild() {
-        let hhmm = DateFormatter(); hhmm.dateFormat = "HH:mm"
         if let w = weather {
             var parts: [String] = []
             if prefs.showIcon { parts.append(emoji(for: w.icon)) }
@@ -325,54 +376,86 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSSearchFieldDelegate,
             if parts.isEmpty { parts = [emoji(for: w.icon)] }   // never leave the menu bar empty
             item.button?.title = parts.joined(separator: " ") + (failed ? " ⚠︎" : "")
             item.button?.toolTip = "\(place.name): \(describe(w.icon))" + (failed ? "\nUpdate failed — showing older data" : "")
+            item.button?.setAccessibilityLabel(String(format: "%@, %.0f degrees, %@", place.name, w.temp.rounded(), describe(w.icon))
+                                               + (failed ? ", update failed" : ""))
         } else {
             item.button?.title = failed ? "⚠︎ Weather" : "…"
             item.button?.toolTip = nil
+            item.button?.setAccessibilityLabel(failed ? "Weather, update failed" : "Weather, loading")
         }
+        fillMenu()
+    }
 
-        let menu = NSMenu()
+    /// The menu is also refilled each time it opens, so "Today", the next 24 hours
+    /// and sunrise follow the clock even when no new forecast has arrived.
+    func menuNeedsUpdate(_ m: NSMenu) { fillMenu() }
+
+    func fillMenu() {
+        menu.removeAllItems()
+        let hhmm = DateFormatter(); hhmm.dateFormat = "HH:mm"
+        let now = Date()
+        let cal = Calendar.current
         menu.addItem(header("\(place.label) · \(place.altitude) m"))
 
         if let w = weather {
-            menu.addItem(row("\(emoji(for: w.icon))  \(String(format: "%.1f", w.temp))°C  \(describe(w.icon))"))
-            var details: [String] = []
+            menu.addItem(row("\(emoji(for: w.icon))  \(String(format: "%.1f", w.temp))°C  \(describe(w.icon))",
+                             speech: String(format: "Now %.1f degrees, %@", w.temp, describe(w.icon))))
+            var details: [String] = [], spoken: [String] = []
             if let s = w.wind {
                 var t = String(format: "Wind %.0f km/h", s)
-                if let d = w.windDir { t += " " + compass(d) }
-                if let g = w.gust { t += String(format: ", gusts %.0f", g) }
-                details.append(t)
+                var v = String(format: "Wind %.0f kilometres per hour", s)
+                if let d = w.windDir { t += " " + compass(d); v += " from the " + spokenCompass(d) }
+                if let g = w.gust { t += String(format: ", gusts %.0f", g); v += String(format: ", gusts %.0f", g) }
+                details.append(t); spoken.append(v)
             }
             if let sun = sunTimes(lat: place.lat, lon: place.lon) {
                 details.append("☀︎ \(hhmm.string(from: sun.rise)) – \(hhmm.string(from: sun.set))")
+                spoken.append("sunrise \(hhmm.string(from: sun.rise)), sunset \(hhmm.string(from: sun.set))")
             }
-            if !details.isEmpty { menu.addItem(row(details.joined(separator: "   "))) }
-            menu.addItem(row("Forecast issued \(hhmm.string(from: w.issued))" + (failed ? "  ·  update failed" : ""),
-                             secondary: true))
+            if !details.isEmpty {
+                menu.addItem(row(details.joined(separator: "   "), speech: spoken.joined(separator: ", ")))
+            }
+            let issued = cal.isDateInToday(w.issued) ? hhmm.string(from: w.issued)
+                : DateFormatter.localizedString(from: w.issued, dateStyle: .medium, timeStyle: .short)
+            menu.addItem(row("Forecast issued \(issued)" + (failed ? "  ·  update failed" : ""), secondary: true))
 
-            if !w.slots.isEmpty {
+            // A forecast from earlier still holds periods that have already ended.
+            let slots = w.slots.filter { $0.time.addingTimeInterval(3 * 3600) > now }
+            if !slots.isEmpty {
                 menu.addItem(.separator())
                 menu.addItem(header("Next 24 hours"))
-                for s in w.slots {
+                for s in slots {
+                    let time = hhmm.string(from: s.time)
                     let temp = s.temp.map { String(format: "%.0f°", $0) } ?? ""
                     let prob = s.rainProb.map { $0 >= 5 ? String(format: "%.0f%%\t💧", $0) : "" } ?? ""
-                    menu.addItem(row("\(hhmm.string(from: s.time))\t\(emoji(for: s.icon))\t\(temp)\t\(prob)",
-                                     tabs: hourTabs, tip: describe(s.icon)))
+                    var speech = "\(time), \(describe(s.icon))"
+                    if let t = s.temp { speech += String(format: ", %.0f degrees", t) }
+                    if let p = s.rainProb, p >= 5 { speech += String(format: ", %.0f percent chance of rain", p) }
+                    menu.addItem(row("\(time)\t\(emoji(for: s.icon))\t\(temp)\t\(prob)",
+                                     tabs: hourTabs, tip: describe(s.icon), speech: speech))
                 }
             }
 
-            if !w.days.isEmpty {
+            let days = w.days.filter { $0.date >= cal.startOfDay(for: now) }
+            if !days.isEmpty {
                 menu.addItem(.separator())
                 menu.addItem(header("Forecast"))
                 let wd = DateFormatter(); wd.dateFormat = "EEE d"
-                let cal = Calendar.current
-                for d in w.days.prefix(7) {
-                    let name = cal.isDateInToday(d.date) ? "Today" : cal.isDateInTomorrow(d.date) ? "Tomorrow" : wd.string(from: d.date)
+                let full = DateFormatter(); full.setLocalizedDateFormatFromTemplate("EEEEdMMMM")
+                for d in days.prefix(7) {
+                    let today = cal.isDateInToday(d.date), tomorrow = cal.isDateInTomorrow(d.date)
+                    let name = today ? "Today" : tomorrow ? "Tomorrow" : wd.string(from: d.date)
                     let lo = d.precipMin.rounded(), hi = d.precipMax.rounded()
                     let rain = d.precipMax < 0.1 ? "" : hi < 1 ? "<1 mm"
                         : lo == hi ? String(format: "%.0f mm", hi)
                         : String(format: "%.0f–%.0f mm", lo, hi)
+                    let spokenRain = d.precipMax < 0.1 ? "" : hi < 1 ? ", less than 1 millimetre of rain"
+                        : lo == hi ? String(format: hi == 1 ? ", %.0f millimetre of rain" : ", %.0f millimetres of rain", hi)
+                        : String(format: ", %.0f to %.0f millimetres of rain", lo, hi)
+                    let speech = String(format: "%@, %@, %.0f to %.0f degrees", today || tomorrow ? name : full.string(from: d.date),
+                                        describe(d.icon), d.tmin, d.tmax) + spokenRain
                     menu.addItem(row(String(format: "%@\t%@\t%.0f°\t%.0f°\t%@", name, emoji(for: d.icon), d.tmin, d.tmax, rain),
-                                     tabs: dayTabs, tip: describe(d.icon)))
+                                     tabs: dayTabs, tip: describe(d.icon), speech: speech))
                 }
             }
         } else if failed {
@@ -386,6 +469,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSSearchFieldDelegate,
         here.state = follow ? .on : .off
         here.target = self
         menu.addItem(here)
+        if follow, let issue = locationIssue {
+            menu.addItem(row(issue == .outside ? "Outside Switzerland · showing \(place.label)"
+                                               : "Location access is off · showing \(place.label)",
+                             tip: issue == .outside ? "Local forecasts are only available for Swiss postcodes."
+                                                    : "Turn it on in System Settings → Privacy & Security → Location Services.",
+                             secondary: true))
+        }
         let change = NSMenuItem(title: "Change Location…", action: #selector(changeCity), keyEquivalent: "l")
         change.target = self
         menu.addItem(change)
@@ -420,7 +510,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSSearchFieldDelegate,
         src.target = self
         src.toolTip = "Forecast data from MeteoSwiss Open Government Data (CC BY 4.0)"
         menu.addItem(src.withSecondaryStyle())
-        item.menu = menu
     }
 
     func menuBarOptions() -> NSMenuItem {
@@ -493,6 +582,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSSearchFieldDelegate,
 
     @objc func toggleFollow() {
         follow.toggle()
+        locationIssue = nil
         if follow { locate(quiet: false) }
         rebuild()
     }
@@ -503,7 +593,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSSearchFieldDelegate,
         locating = true
         switch locator.authorizationStatus {
         case .notDetermined: locator.requestWhenInUseAuthorization()   // continues in the callback
-        case .denied, .restricted: locationFailed("Location access is off for \(appName). Turn it on in System Settings → Privacy & Security → Location Services.")
+        case .denied, .restricted: locationFailed("Location access is off for \(appName). Turn it on in System Settings → Privacy & Security → Location Services.", issue: .denied)
         default: locator.requestLocation()
         }
     }
@@ -512,7 +602,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSSearchFieldDelegate,
         guard locating else { return }
         switch m.authorizationStatus {
         case .notDetermined: break
-        case .denied, .restricted: locationFailed("Location access was not granted.")
+        case .denied, .restricted: locationFailed("Location access was not granted.", issue: .denied)
         default: m.requestLocation()
         }
     }
@@ -521,8 +611,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSSearchFieldDelegate,
         guard locating, let c = locs.last?.coordinate else { return }
         locating = false
         guard let (p, dist) = nearest(to: c, in: places), dist < 20_000 else {
-            return locationFailed("Your location is outside Switzerland, where local forecasts are not available. Choose a place with Change Location….")
+            return locationFailed("Your location is outside Switzerland, where local forecasts are not available. Choose a place with Change Location….",
+                                  issue: .outside)
         }
+        if locationIssue != nil { locationIssue = nil; rebuild() }
         guard p.plz != place.plz else { return }
         // Wi-Fi positioning wobbles by a few hundred metres; near the midpoint between
         // two postcodes that would flip the place (and refetch) on every check.
@@ -536,8 +628,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSSearchFieldDelegate,
         locationFailed("Could not determine your location (\(error.localizedDescription)).")
     }
 
-    func locationFailed(_ msg: String) {
+    /// `issue` is a lasting reason (shown in the menu); without one the failure is
+    /// treated as temporary and only reported when the user asked.
+    func locationFailed(_ msg: String, issue: LocationIssue? = nil) {
         locating = false
+        if issue != nil { locationIssue = issue }
         rebuild()
         if locateQuietly { return }
         NSApp.activate(ignoringOtherApps: true)

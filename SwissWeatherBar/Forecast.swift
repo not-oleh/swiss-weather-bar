@@ -29,7 +29,7 @@ enum Param: String, CaseIterable {
     case dayRainHi = "rreq90p0"     // mm, 90 % quantile
 }
 
-struct Day {
+struct Day: Codable {
     let date: Date
     let icon: Int
     let tmin: Double
@@ -39,14 +39,14 @@ struct Day {
     let precipMax: Double
 }
 
-struct Slot {         // one 3-hour step of the local forecast
+struct Slot: Codable { // one 3-hour step of the local forecast
     let time: Date
     let icon: Int
     let temp: Double?
     let rainProb: Double?
 }
 
-struct Weather {
+struct Weather: Codable {
     let temp: Double
     let icon: Int
     let issued: Date
@@ -75,6 +75,7 @@ private final class RemoteCSV {
     let head: Data                  // first KB: header line plus a few rows
     var dataStart = 0
     var pointMajor = true
+    var firstTs: Int64 = 0          // timestamp of the first data row
     /// Byte offset of some postal-code row, per timestamp block (key 0 when grouped by
     /// point). A non-postal row before it lies before the postal run, one after it after.
     var anchors: [Int64: Int] = [:]
@@ -93,13 +94,21 @@ final class OGDClient {
     private func count() { lock.lock(); _requests += 1; lock.unlock() }
     /// Where a point's rows were found last time, as a fraction of the file size.
     /// Consecutive runs have the same layout, so this makes later searches short.
+    /// In files grouped by timestamp the key is the block's position in the file
+    /// (hours after its first row), not the timestamp itself: each run starts an
+    /// hour later, so a given timestamp moves up by one block.
     private var hints: [String: Double] = [:]
+    private func hintKey(_ f: RemoteCSV, _ point: Int, _ ts: Int64) -> String {
+        "\(f.param.rawValue)/\(point)/" + (f.pointMajor ? "all" : "+\(hours(f.firstTs, ts))h")
+    }
     private func hint(_ f: RemoteCSV, _ point: Int, _ ts: Int64) -> Int? {
+        let key = hintKey(f, point, ts)
         lock.lock(); defer { lock.unlock() }
-        return hints["\(f.param.rawValue)/\(point)/\(ts)"].map { Int($0 * Double(f.size)) }
+        return hints[key].map { Int($0 * Double(f.size)) }
     }
     private func remember(_ f: RemoteCSV, _ point: Int, _ ts: Int64, _ off: Int) {
-        lock.lock(); hints["\(f.param.rawValue)/\(point)/\(ts)"] = Double(off) / Double(f.size); lock.unlock()
+        let key = hintKey(f, point, ts)
+        lock.lock(); hints[key] = Double(off) / Double(f.size); lock.unlock()
     }
     private var files: [Param: RemoteCSV] = [:]
 
@@ -200,6 +209,7 @@ final class OGDClient {
         let rows = lines(head, partialFirst: true).compactMap(Row.init)
         guard rows.count >= 2 else { throw OGDError.missing("rows") }
         f.pointMajor = rows[0].id == rows[1].id && rows[0].type == rows[1].type
+        f.firstTs = rows[0].ts
     }
 
     /// First complete row starting after byte `off` (or at it, at the data start), with its offset.
@@ -274,9 +284,9 @@ final class OGDClient {
         // Timestamp-major: one search per timestamp. Blocks are about equally
         // sized, so after the first hit we can guess where the next one is.
         var perHour: Double?
-        if stamps.count > 1, let (first, _) = try await row(after: f.dataStart, in: f),
+        if stamps.count > 1,
            let tail = lines(try await bytes(f, f.size - 128, 128), partialFirst: true).last.flatMap(Row.init) {
-            perHour = Double(f.size - f.dataStart) / Double(max(1, hours(first.ts, tail.ts) + 1))
+            perHour = Double(f.size - f.dataStart) / Double(max(1, hours(f.firstTs, tail.ts) + 1))
         }
         var out: [Int64: Double] = [:]
         var last: (ts: Int64, off: Int)?

@@ -8,6 +8,7 @@ A small macOS menu bar app that shows the local weather forecast for any Swiss p
 - A 7-day forecast with min/max temperature and rain range
 - Search by place name or postcode, or follow your current location (on by default)
 - Recent locations, Open at Login
+- VoiceOver reads each forecast row as a sentence
 
 Free and open source. No account, no tracking, no ads.
 
@@ -38,7 +39,7 @@ accuracy or availability. For official forecasts and weather warnings, see
 
 - Your location is used only on your Mac, to pick the nearest postcode, and is never sent anywhere.
 - The only network requests go to `data.geo.admin.ch`.
-- Settings (chosen place, recent places) are stored in your user defaults.
+- Settings (chosen place, recent places) are stored in your user defaults. The last forecast is cached in `~/Library/Caches/io.github.swissweatherbar` so it shows at once on launch.
 
 ## Download
 
