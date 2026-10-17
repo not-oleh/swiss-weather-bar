@@ -116,8 +116,9 @@ func spokenCompass(_ deg: Int) -> String {
 /// A non-interactive row. It is drawn by a custom view because AppKit greys out the
 /// text of disabled menu items; tab-separated columns line up on the given tab stops.
 /// VoiceOver reads the row as one sentence: `speech`, or the text without the tabs.
+/// Columns listed in `rain` are drawn in blue, as weather apps usually show rain.
 func row(_ text: String, tabs: [NSTextTab] = [], tip: String? = nil, secondary: Bool = false,
-         speech: String? = nil) -> NSMenuItem {
+         speech: String? = nil, rain: Set<Int> = []) -> NSMenuItem {
     let inset = rowInset
     let font = secondary ? NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
                          : NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
@@ -128,7 +129,7 @@ func row(_ text: String, tabs: [NSTextTab] = [], tip: String? = nil, secondary: 
     for (i, c) in text.components(separatedBy: "\t").enumerated() {
         let label = NSTextField(labelWithString: c)
         label.font = font
-        label.textColor = color
+        label.textColor = rain.contains(i) ? .systemBlue : color
         label.setAccessibilityElement(false)
         label.sizeToFit()
         let w = label.frame.width
@@ -162,10 +163,10 @@ func header(_ title: String) -> NSMenuItem {
     return m
 }
 
-// time | icon | temperature | rain chance | drop — "100%" needs its own column
+// time | icon | temperature | rain chance — "100%" needs its own column
 // or it runs into the temperature
 let hourTabs = [NSTextTab(textAlignment: .left, location: 52), NSTextTab(textAlignment: .right, location: 112),
-                NSTextTab(textAlignment: .right, location: 160), NSTextTab(textAlignment: .left, location: 166)]
+                NSTextTab(textAlignment: .right, location: 160)]
 let dayTabs = [NSTextTab(textAlignment: .left, location: 84), NSTextTab(textAlignment: .right, location: 144),
                NSTextTab(textAlignment: .right, location: 184), NSTextTab(textAlignment: .right, location: 268)]
 
@@ -558,12 +559,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSSear
                 for s in slots {
                     let time = hhmm.string(from: s.time)
                     let temp = s.temp.map { String(format: "%.0f°", $0) } ?? ""
-                    let prob = s.rainProb.map { $0 >= 5 ? String(format: "%.0f%%\t💧", $0) : "" } ?? ""
+                    let prob = s.rainProb.map { $0 >= 5 ? String(format: "%.0f%%", $0) : "" } ?? ""
                     var speech = "\(time), \(describe(s.icon))"
+                    var tip = describe(s.icon)
                     if let t = s.temp { speech += String(format: ", %.0f degrees", t) }
-                    if let p = s.rainProb, p >= 5 { speech += String(format: ", %.0f percent chance of rain", p) }
+                    if let p = s.rainProb, p >= 5 {
+                        speech += String(format: ", %.0f percent chance of rain", p)
+                        tip += String(format: ", %.0f%% chance of rain", p)
+                    }
                     menu.addItem(row("\(time)\t\(emoji(for: s.icon))\t\(temp)\t\(prob)",
-                                     tabs: hourTabs, tip: describe(s.icon), speech: speech))
+                                     tabs: hourTabs, tip: tip, speech: speech, rain: [3]))
                 }
             }
 
@@ -586,7 +591,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSSear
                     let speech = String(format: "%@, %@, %.0f to %.0f degrees", today || tomorrow ? name : full.string(from: d.date),
                                         describe(d.icon), d.tmin, d.tmax) + spokenRain
                     menu.addItem(row(String(format: "%@\t%@\t%.0f°\t%.0f°\t%@", name, emoji(for: d.icon), d.tmin, d.tmax, rain),
-                                     tabs: dayTabs, tip: describe(d.icon), speech: speech))
+                                     tabs: dayTabs, tip: describe(d.icon) + (rain.isEmpty ? "" : ", \(rain) of rain"),
+                                     speech: speech, rain: [4]))
                 }
             }
         } else if failed {
