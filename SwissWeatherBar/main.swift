@@ -151,8 +151,10 @@ func header(_ title: String) -> NSMenuItem {
     return m
 }
 
+// time | icon | temperature | rain chance | drop — "100%" needs its own column
+// or it runs into the temperature
 let hourTabs = [NSTextTab(textAlignment: .left, location: 52), NSTextTab(textAlignment: .right, location: 112),
-                NSTextTab(textAlignment: .right, location: 168)]
+                NSTextTab(textAlignment: .right, location: 160), NSTextTab(textAlignment: .left, location: 166)]
 let dayTabs = [NSTextTab(textAlignment: .left, location: 84), NSTextTab(textAlignment: .right, location: 144),
                NSTextTab(textAlignment: .right, location: 184), NSTextTab(textAlignment: .right, location: 268)]
 
@@ -352,7 +354,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSSearchFieldDelegate,
                 menu.addItem(header("Next 24 hours"))
                 for s in w.slots {
                     let temp = s.temp.map { String(format: "%.0f°", $0) } ?? ""
-                    let prob = s.rainProb.map { $0 >= 5 ? String(format: "%.0f%% 💧", $0) : "" } ?? ""
+                    let prob = s.rainProb.map { $0 >= 5 ? String(format: "%.0f%%\t💧", $0) : "" } ?? ""
                     menu.addItem(row("\(hhmm.string(from: s.time))\t\(emoji(for: s.icon))\t\(temp)\t\(prob)",
                                      tabs: hourTabs, tip: describe(s.icon)))
                 }
