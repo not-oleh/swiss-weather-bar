@@ -40,18 +40,20 @@ accuracy or availability. For official forecasts and weather warnings, see
 - The only network requests go to `data.geo.admin.ch`.
 - Settings (chosen place, recent places) are stored in your user defaults.
 
-## Build
+## Install
 
 Requires macOS 13 or later and the Xcode command line tools (`xcode-select --install`).
 
 ```sh
+git clone https://github.com/olehhnat/swiss-weather-bar.git
+cd swiss-weather-bar
 ./SwissWeatherBar/build.sh
-open "SwissWeatherBar/Swiss Weather Bar.app"
+mv "SwissWeatherBar/Swiss Weather Bar.app" /Applications/
+open "/Applications/Swiss Weather Bar.app"
 ```
 
-The build is ad-hoc signed. If you share the built `.app`, macOS Gatekeeper will warn the
-recipient, who can right-click → Open the first time. Signing and notarising with an Apple
-Developer ID removes that warning.
+On first launch macOS asks for location access, which the app uses to pick your nearest
+postcode. If you decline, choose a place with **Change Location…** instead.
 
 ## Licence
 
