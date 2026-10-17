@@ -114,7 +114,7 @@ final class OGDClient {
         c.requestCachePolicy = .reloadIgnoringLocalCacheData
         c.timeoutIntervalForRequest = 20
         c.httpMaximumConnectionsPerHost = 4
-        c.httpAdditionalHeaders = ["User-Agent": "SwissWeatherBar/2.0 (macOS menu bar app)"]
+        c.httpAdditionalHeaders = ["User-Agent": "SwissWeatherBar/\(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev") (macOS menu bar app)"]
         session = URLSession(configuration: c)
     }
 

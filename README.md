@@ -40,7 +40,23 @@ accuracy or availability. For official forecasts and weather warnings, see
 - The only network requests go to `data.geo.admin.ch`.
 - Settings (chosen place, recent places) are stored in your user defaults.
 
-## Install
+## Download
+
+Requires macOS 13 or later, on Apple Silicon or Intel.
+
+1. Download the latest `Swiss-Weather-Bar-x.y.z.zip` from
+   [Releases](https://github.com/olehhnat/swiss-weather-bar/releases/latest).
+2. Unzip it and move **Swiss Weather Bar** to your Applications folder.
+3. Open it. The app is free and not notarised by Apple, so macOS blocks it the first time:
+   - **macOS 15 or later:** click **Done**, then open **System Settings → Privacy & Security**,
+     scroll down to the message about Swiss Weather Bar and click **Open Anyway**.
+   - **macOS 13 or 14:** Control-click the app, choose **Open**, then **Open** again.
+
+The weather appears in the menu bar; the app has no Dock icon. On first launch macOS asks
+for location access, which the app uses to pick your nearest postcode. If you decline,
+choose a place with **Change Location…** instead.
+
+## Build from source
 
 Requires macOS 13 or later and the Xcode command line tools (`xcode-select --install`).
 
@@ -51,9 +67,6 @@ cd swiss-weather-bar
 mv "SwissWeatherBar/Swiss Weather Bar.app" /Applications/
 open "/Applications/Swiss Weather Bar.app"
 ```
-
-On first launch macOS asks for location access, which the app uses to pick your nearest
-postcode. If you decline, choose a place with **Change Location…** instead.
 
 ## Licence
 
