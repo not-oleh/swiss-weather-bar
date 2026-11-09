@@ -43,8 +43,10 @@ extension AppDelegate {
     }
 
     func addWarnings() {
-        guard warn.checkedAt != nil || warn.failed else { return }   // first check still running
-        guard warn.isFresh else {
+        // A fresh check of another place says nothing about this one.
+        let checked = warn.matchedPlace == place.plz
+        guard checked || warn.failed else { return }   // first check for this place still running
+        guard warn.isFresh, checked else {
             menu.addItem(link(tr("Weather warnings unavailable") + " · meteoalarm.org", meteoAlarmSite))
             return
         }

@@ -35,6 +35,7 @@ extension AppDelegate {
     func locationManager(_ m: CLLocationManager, didUpdateLocations locs: [CLLocation]) {
         guard locating, let c = locs.last?.coordinate else { return }
         locating = false
+        guard follow else { return }   // turned off, or a place picked by hand, while locating
         guard let (p, dist) = nearest(to: c, in: places), dist < 20_000 else {
             return locationFailed(tr("Your location is outside Switzerland, where local forecasts are not available. Choose a place with Change Location…."),
                                   issue: .outside)
